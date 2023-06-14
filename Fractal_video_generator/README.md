@@ -9,6 +9,10 @@ It is a simple MANDELBROT set ZOOM application using tkinter as GUI, matplotlib,
 
 ### USING
 
+GUI:
+
+<img src="GUI.jpg">
+
 GUI has 2 buttons:
 - colorspace dropdown menu, where user can select predefined colosspaces applied to the mandelbrot set, it has impact on the rendered output frame colorspace range
 - Start Render button which will start rendering the video, and when finishes then it will export an h264 video 'fractal_zoom.mp4' into  the source folder
