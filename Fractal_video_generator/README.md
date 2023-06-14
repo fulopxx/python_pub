@@ -2,6 +2,11 @@
 
 It is a simple MANDELBROT set ZOOM application using tkinter as GUI, matplotlib, imageio, numba, numpy, torch - CPU and/or CUDA acceleration implementations (commmented out the corresponding part of the code in this revision)
 
+### Requirements
+- I used Python 3.9 interpreter, PyPi packages
+- installed CUDA 11.8 (and tested on NVIDIA GeForce RTX 2070 8GB)
+- torch needs to prebuilt with using the corresponding CUDA version (description on the torch website) myversion: Version: 2.1.0.dev20230525+cu118
+
 ### USING
 
 configuring the exported and rendered frames should be done in the FractalGui Class:
@@ -14,3 +19,7 @@ configuring the exported and rendered frames should be done in the FractalGui Cl
         self.fps = 30 # The frames per second for the video
         self.max_iter = 256 # Max iteration
 ```
+
+There is two option for rendering:
+- normal
+- Distance Estimation coloring technique CUDA based (torch) (v4 is the latest working) anda CPU based version also (slower) ->Distance Estimation coloring is a more advanced coloring scheme but slower rendering time
