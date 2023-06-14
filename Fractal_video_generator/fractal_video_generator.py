@@ -21,9 +21,9 @@ class FractalGui(tk.Tk):
         self.geometry('1800x1800')  # slightly adjust window size to accommodate side by side layout
 
         # Video parameters
-        self.n_frames = 20 # The number of frames in the video
-        self.width = 640 # The width of each frame
-        self.height = 480 # The height of each frame
+        self.n_frames = 90 # The number of frames in the video
+        self.width = 1920 # The width of each frame
+        self.height = 1080 # The height of each frame
         self.zoom_speed = 0.12 # The zoom speed for the fractal
         self.fps = 30 # The frames per second for the video
         self.max_iter = 256 # Max iteration
