@@ -29,6 +29,12 @@ configuring the exported and rendered frames should be done in the FractalGui Cl
         self.max_iter = 256 # Max iteration
 ```
 
+Zooming point is wired to the code as an interesting mandelbrot coordinate in the generate_frames function as:
+```
+    x_center = 0.10150891662818479
+    y_center = 0.6330939302717072
+```
+
 There is two option for rendering:
 - normal
 - Distance Estimation coloring technique CUDA based (torch) (v4 is the latest working) anda CPU based version also (slower) ->Distance Estimation coloring is a more advanced coloring scheme but slower rendering time
