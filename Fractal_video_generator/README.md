@@ -7,7 +7,7 @@ It is a simple MANDELBROT set ZOOM application using tkinter as GUI, matplotlib,
 - installed CUDA 11.8 (and tested on NVIDIA GeForce RTX 2070 8GB)
 - torch needs to prebuilt with using the corresponding CUDA version (description on the torch website) myversion: Version: 2.1.0.dev20230525+cu118
 
-### USING
+### USAGE
 
 GUI:
 
