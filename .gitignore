@@ -1,0 +1,31 @@
+# Shared baseline for python_pub. Merge with an existing file; do not erase it.
+# Toolkit-specific default-deny rules live in crash_regime_rules/.gitignore.
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+*.tmp
+*.swp
+*.bak
+.DS_Store
+Thumbs.db
+Desktop.ini
+# Local projects and preparation material excluded from this publication
+/RAG_mrfulop/
+/crash_Regime_git_sync_todo/

@@ -1,0 +1,34 @@
+# INITIAL PUBLICATION POLICY: deny by default, permit reviewed source types.
+# This does not inspect content or remove already tracked files.
+# Root Python modules retain their original names and locations.
+*
+!/.gitignore
+!/README.md
+!/requirements.txt
+!/CHANGELOG.md
+!/*.py
+
+# Explicit documentation candidates. Review the LOCAL copies before staging.
+!/GC_audit_1_3_12_felbontasi_profilok.md
+!/GC_1_0_19_NDOG_NWOG_celarak.md
+!/QQQ_options_advisor_utmutato.md
+!/ES_NQ_regime_v12_utmutato.md
+!/ICT_market_transition_es_GC_breaker_utmutato.md
+!/VIX_stress_monitor_utmutato.md
+!/Makro_AI_bankhitel_console_utmutato.md
+
+# Defense in depth: never allow likely local/private Python files by wildcard.
+# If a necessary module matches one of these names, review it first.
+local_*.py
+*_local.py
+*secret*.py
+*credential*.py
+*_backup.py
+*_old.py
+
+# No subdirectory is enabled yet. This intentionally excludes venv, .idea,
+# raw data, outputs, caches, source archives, screenshots and nested fixtures.
+# JSON/CSV are NOT globally forbidden in python_pub. Within this toolkit,
+# add exact exceptions only after content, necessity and redistribution review.
+# In particular, macro_provider_snapshot.json and tests/fixtures/ are withheld.
+# Never bypass this policy with git add -f.
