@@ -1,0 +1,7 @@
+# Direct dependencies inferred from the current toolkit imports.
+# Starter list, NOT a locked/reproducible environment or a compatibility promise.
+# Validate in a NEW environment; do not upgrade the working trading environment.
+numpy
+pandas
+ib_insync
+tzdata
