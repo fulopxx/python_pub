@@ -9,13 +9,49 @@ This is research software, not a proven trading strategy or a production
 execution platform. The initial public layout deliberately preserves the
 existing `crash_regime_rules` folder and versioned Python filenames.
 
+## Quick start: synthetic offline demo
+
+From the `python_pub` repository root, open PowerShell and run the commands
+below. The Windows clean-clone run used Python 3.9.13. Use a fresh clone or
+make sure `.venv` does not already exist so you do not reuse or modify a working
+environment. If the Python launcher is unavailable, use the full path to your
+Python interpreter in the environment creation command.
+
+```powershell
+Set-Location .\crash_regime_rules
+py -3.9 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe qqq_options_advisor.py --demo --output-dir qqq_options_output
+```
+
+The demo uses synthetic inputs and requires neither TWS nor an IBKR account.
+The requirements file lists direct dependencies; it is not a lockfile or a
+promise of compatibility with other Python versions.
+
+Selected lines from the demo's Hungarian console output:
+
+```text
+ÖSSZESÍTETT STÁTUSZ: DEMO_PAPER_CANDIDATES_UNVERIFIED_QUOTES
+KÜLÖN DIAGNOSZTIKAI TALÁLATOK | NEM BELÉPÉSI UTASÍTÁS
+LONG #1 | STRUKTÚRA MIATT NEM BELÉPHETŐ
+DIAGNOSZTIKA VÉGE | VÉGREHAJTÁSI ENGEDÉLY: NEM
+```
+
+The example long put matches the diagnostic filters, but the structure gate
+keeps it off the paper-entry list. A paper candidate is still not permission to
+place a live trade. The demo places no orders.
+
+Look in `qqq_options_output\demo\` for `qqq_options_latest.json` and
+`qqq_options_diagnostics.txt`, along with the CSV exports. These are local
+generated files and should not be committed.
+
 ## Capabilities
 
 | Area | Scope | Representative modules |
 |---|---|---|
 | Gold regimes | Multi-timeframe context, directional regimes and conditional trade plans | `gc_regime_1_0_19.py`, `gc_daily_context.py` |
 | Equity-index regimes | Shared ES/NQ analysis and daily/stress context | `index_regime.py`, `index_daily_context.py`, `index_stress_context.py` |
-| Exhaustion and transitions | Exhaustion diagnostics, higher-timeframe transitions and short-term whipsaw context | `market_exhaustion.py`, `market_transition.py` |
+| Exhaustion and transitions | Exhaustion diagnostics, higher-timeframe transitions and short-term whipsaw context | `market_regime_toolkit/exhaustion.py`, `market_transition.py` |
 | Market structure | FVG/order-block/breaker analysis and a dedicated GC breaker monitor | `market_structure.py`, `gc_breaker_monitor.py` |
 | Volatility context | VIX/VX and UVIX/SVIX monitoring with timestamp/data-quality context | `run_vix_stress_monitor_v1_0.py` |
 | Options research | QQQ long-put and debit-spread screening, liquidity/Greeks/cost diagnostics and entry gating | `qqq_options_advisor.py` |
@@ -66,52 +102,21 @@ configuration serialization are covered by targeted offline checks.
 Existing runners, engine filenames and launch commands remain in place.
 This is not yet an installable distribution or a completed package migration.
 
-## Quick start: synthetic offline demo
-
-Start in this folder, not the `python_pub` repository root. The example below
-uses a new virtual environment so that the existing research environment is not
-changed.
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe qqq_options_advisor.py --demo --output-dir qqq_options_output
-```
-
-The example selects Python 3.11 if it is installed; it is a setup recommendation,
-not a claim that every dependency/version combination has been certified.
-The initial requirements file lists direct dependencies but is not a lockfile.
-Record and validate a known-good environment before publishing reproducibility
-claims or changing the existing working environment.
-
-The `--demo` input is synthetic and does not require TWS or an IBKR account.
-Generated output is local and excluded from the initial publication policy.
-Screenshots or example reports should be reviewed and explicitly approved before
-being committed.
-
 ## Tests
 
-Run the following selected synthetic/offline tests from this folder:
+From `crash_regime_rules`, with the virtual environment from the quick start,
+run the selected offline regression suite:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest test_market_structure test_market_transition test_qqq_options_advisor test_gc_audit_conclusions test_gc_audit_resolution test_gc_v19_gap_targets -v
+.\.venv\Scripts\python.exe -m unittest test_market_structure test_market_transition test_qqq_options_advisor test_gc_audit_conclusions test_gc_audit_resolution test_gc_v19_gap_targets test_gc_engine test_perf_equivalence test_package_layout test_publication_policy -q
 ```
 
-After the stable-GC-import refactor, run its additional offline wiring checks:
+**Verified baseline:** 262 selected offline tests passed and the synthetic QQQ
+demo completed in a separate Windows clean clone with Python 3.9.13. This was
+not full-suite coverage, a performance claim, or a live TWS validation.
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest test_gc_engine -v
-```
-
-These checks verify direct function re-exports, current-runner wiring and the
+The GC engine tests check direct re-exports, current-runner wiring and the
 separate audit pin. They do not connect to TWS or validate live data.
-
-For the first packaged module and the narrowed publication policy, also run:
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest test_package_layout test_publication_policy test_perf_equivalence -v
-```
-
 The package tests include a spawned child-process configuration round trip.
 The Git-policy integration tests use disposable synthetic repositories, never
 stage files in the caller's repository and perform no commits or pushes.
@@ -123,9 +128,8 @@ fixtures. Those files are intentionally withheld from the initial public
 baseline until provenance, necessity and redistribution have been reviewed or
 they have been replaced with clearly synthetic fixtures.
 
-Full `unittest` discovery can therefore report missing-fixture errors in the
-initial source-only publication. There is no CI badge or all-tests-passing claim
-until a clean clone has been validated.
+Full `unittest` discovery can report missing-fixture errors in the public
+source tree. The selected clean-clone run does not resolve those failures.
 
 A separate baseline run of `test_market_exhaustion` before the package move
 also found a pre-existing failure in
@@ -221,11 +225,12 @@ Development is AI-assisted, including implementation, debugging, documentation
 and test design. Generated suggestions are reviewed through iterative runs and
 regression tests; AI assistance does not certify financial conclusions.
 
-The planned sequence is to establish a reviewed source baseline, validate a
-clean-clone demo and test subset, then refactor imports and stable module names
-without changing behavior. A later standalone `market-regime-toolkit`
-repository will become the canonical project; `python_pub` can remain the
-portfolio index. No standalone repository is claimed to exist yet.
+The reviewed source baseline, selected clean-clone checks, stable GC engine
+import and first packaged module are in place. The next refactor steps will
+continue to move modules one at a time while preserving existing launch
+commands and imports. Any GC audit engine upgrade remains a separate change.
+A standalone `market-regime-toolkit` repository remains a later step;
+`python_pub` is still the portfolio home.
 
 No license grant is implied by this README. Choose an explicit code license
 separately and review third-party material before redistribution.
