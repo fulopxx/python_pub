@@ -11,20 +11,20 @@ import pandas as pd
 from ib_insync import IB, ContFuture, util
 
 # FONTOS:
-# A modul neve a jelenlegi verziószámozott fájlnak megfelelően:
-from gc_regime_1_0_19 import build_dxy_macro_context, run_gold_checklist
+# Stabil importfelület; a gc_engine.py továbbra is az 1.0.19-es motort rögzíti.
+from gc_engine import build_dxy_macro_context, run_gold_checklist
 from gc_daily_context import fetch_gc_daily_context
 
 
 # ===================================================================
-# RUN GC CHECKLIST VERSION 1.5.2 (GC 1.0.16-ICT.1 + daily context)
+# RUN GC CHECKLIST VERSION 1.7 (GC 1.0.19 + daily context)
 #
 # Feladat:
 # - Kapcsolódás TWS-hez
 # - GC 1 perces historical adat letöltése
 # - DXY / DX 1 perces historical adat letöltése
 # - DXY session VWAP és 15m/1h/4h/1D gördülő változás számítás
-# - Macro context átadása a gc_regime_1_0_16.py modulnak
+# - Macro context átadása a gc_regime_1_0_19.py modulnak
 # - GC 1 perces adat export audit/backtest célra
 # - Konzolos GC regime report
 #
@@ -123,7 +123,7 @@ MARKET_DATA_TYPE = 4
 # REAL YIELD V1 KORLÁT
 # -------------------------------------------------------------------
 #
-# A gc_regime_1_0_10.py támogatja az alábbi adatokat:
+# Az importált GC engine támogatja az alábbi adatokat:
 #
 # real_yield_10y
 # real_yield_change_15m_bps
@@ -157,7 +157,7 @@ MANUAL_REAL_YIELD_CHANGE_15M_BPS = np.nan
 GC_HISTORY_EXPORT_PATH = "gc_1m_history.csv"
 
 # Ha True:
-# minden run_gc_checklist.py futáskor frissíti / felülírja a fájlt.
+# minden run_gc_checklist_v1_7.py futáskor frissíti / felülírja a fájlt.
 EXPORT_GC_HISTORY_FOR_AUDIT = True
 
 
@@ -642,7 +642,7 @@ def build_gc_macro_context(
     as_of: pd.Timestamp | None = None,
 ) -> dict[str, Any]:
     """
-    GC 1.0.15 macro context, causal DX cutoff aligned with GC.
+    GC macro context, causal DX cutoff aligned with GC.
 
     Version 1:
     - DXY automatikus TWS/IBKR futures adatokból.
@@ -680,7 +680,7 @@ def update_gc_history(
     """
     Új adat összefűzése a meglévő történettel, mentés CSV-be.
 
-    A gc_audit_backtest.py a gc_1m_history.csv fájlt olvassa.
+    A GC audit/backtest scriptek a gc_1m_history.csv fájlt olvassák.
     Formátum: date,open,high,low,close,volume
 
     Visszaadja a teljes (összevont) történetet.
@@ -735,7 +735,7 @@ def main() -> None:
         # 1. TWS kapcsolat
         # -----------------------------------------------------------
         print("Kapcsolódás a TWS-hez...")
-        print("GC RUNNER 1.5 | Motor: gc_regime_1_0_15 | elemző/paper rendszer")
+        print("GC RUNNER 1.7 | Motor: gc_regime_1_0_19 | elemző/paper rendszer")
 
         ib.connect(
             IB_HOST,

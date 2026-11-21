@@ -2623,8 +2623,8 @@ def run_gold_checklist(
 if __name__ == "__main__":
     print(
         "\n"
-        "gc_regime_1_0_16.py betöltődött.\n"
+        "gc_regime_1_0_19.py betöltődött.\n"
         "\n"
         "A runner importját így állítsd:\n"
-        "from gc_regime_1_0_16 import run_gold_checklist\n"
+        "from gc_regime_1_0_19 import run_gold_checklist\n"
     )

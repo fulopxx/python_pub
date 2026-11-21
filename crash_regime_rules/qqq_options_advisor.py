@@ -635,7 +635,7 @@ def evaluate(rows: list[dict], underlying: dict, packet: dict | None,
         "Spread: long ask - short bid, nem végrehajtható combo jegyzés és nem garantált teljesülés.",
         "A költség egy kontraktusra számolt, becsült nyitási díjjal; zárási díj/slippage nincs benne.",
         "QQQ opciók részvényleszállításosak; exercise/assignment és pin-risk külön ellenőrzendő.",
-        "Nem használ számlaegyenleget/pozíciót a szűréshez és nem kezeli a meglévő novemberi opcióidat.",
+        "Nem használ számlaegyenleget vagy meglévő pozíciókat a szűréshez, és nem végez pozíciókezelést.",
     ]
     if not aligned:
         result["notes"].append("A QQQ és az index forrásidőpontja nem megfelelően illesztett vagy hiányzik.")
