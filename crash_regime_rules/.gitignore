@@ -1,12 +1,18 @@
 # INITIAL PUBLICATION POLICY: deny by default, permit reviewed source types.
 # This does not inspect content or remove already tracked files.
-# Root Python modules retain their original names and locations.
+# Root entry modules keep their names; packaged source is allowed explicitly.
 *
 !/.gitignore
 !/README.md
 !/requirements.txt
 !/CHANGELOG.md
 !/*.py
+
+# First packaged module: allow these exact files, not arbitrary nested content.
+!/market_regime_toolkit/
+/market_regime_toolkit/*
+!/market_regime_toolkit/__init__.py
+!/market_regime_toolkit/exhaustion.py
 
 # Explicit documentation candidates. Review the LOCAL copies before staging.
 !/GC_audit_1_3_12_felbontasi_profilok.md
@@ -26,8 +32,8 @@ local_*.py
 *_backup.py
 *_old.py
 
-# No subdirectory is enabled yet. This intentionally excludes venv, .idea,
-# raw data, outputs, caches, source archives, screenshots and nested fixtures.
+# Apart from the exact package files above, subdirectories remain excluded:
+# venv, .idea, raw data, outputs, caches, source archives and nested fixtures.
 # JSON/CSV are NOT globally forbidden in python_pub. Within this toolkit,
 # add exact exceptions only after content, necessity and redistribution review.
 # In particular, macro_provider_snapshot.json and tests/fixtures/ are withheld.

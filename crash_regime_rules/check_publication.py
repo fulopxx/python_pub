@@ -15,6 +15,10 @@ DOCS = {
     "ICT_market_transition_es_GC_breaker_utmutato.md",
     "VIX_stress_monitor_utmutato.md", "Makro_AI_bankhitel_console_utmutato.md",
 }
+PACKAGE_FILES = frozenset({
+    "market_regime_toolkit/__init__.py",
+    "market_regime_toolkit/exhaustion.py",
+})
 SENSITIVE_NAMES = re.compile(
     r"(?i)(^local_.*\.py$|.*_local\.py$|.*secret.*\.py$|"
     r".*credential.*\.py$|.*_(?:backup|old)\.py$)"
@@ -60,9 +64,12 @@ def findings(text: str) -> list[tuple[int, str]]:
 def allowed(relative: str) -> bool:
     p = PurePosixPath(relative)
     return (
-        len(p.parts) == 1
-        and not SENSITIVE_NAMES.fullmatch(p.name)
-        and (p.name in DOCS or p.suffix == ".py")
+        relative in PACKAGE_FILES
+        or (
+            len(p.parts) == 1
+            and not SENSITIVE_NAMES.fullmatch(p.name)
+            and (p.name in DOCS or p.suffix == ".py")
+        )
     )
 
 

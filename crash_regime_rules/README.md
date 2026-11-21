@@ -48,6 +48,24 @@ data and separation between analytical observations and entry eligibility.
 Automated tests cover numerical behavior, diagnostic output, sampling rules and
 regressions; coverage differs between modules.
 
+### Incremental package layout
+
+```text
+crash_regime_rules/
+    market_regime_toolkit/
+        __init__.py
+        exhaustion.py          # unchanged exhaustion implementation
+    market_exhaustion.py        # compatibility import for existing callers
+```
+
+The first packaged module is available as `market_regime_toolkit.exhaustion`.
+The historical `market_exhaustion` import resolves to the same module object,
+including private helpers and shared configuration objects. Class/function
+module metadata now identifies the packaged module; both import orders and
+configuration serialization are covered by targeted offline checks.
+Existing runners, engine filenames and launch commands remain in place.
+This is not yet an installable distribution or a completed package migration.
+
 ## Quick start: synthetic offline demo
 
 Start in this folder, not the `python_pub` repository root. The example below
@@ -88,6 +106,16 @@ After the stable-GC-import refactor, run its additional offline wiring checks:
 These checks verify direct function re-exports, current-runner wiring and the
 separate audit pin. They do not connect to TWS or validate live data.
 
+For the first packaged module and the narrowed publication policy, also run:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest test_package_layout test_publication_policy test_perf_equivalence -v
+```
+
+The package tests include a spawned child-process configuration round trip.
+The Git-policy integration tests use disposable synthetic repositories, never
+stage files in the caller's repository and perform no commits or pushes.
+
 This is a selected subset, not a claim that the entire historical suite is
 self-contained. Keep older versioned modules that these tests import.
 Some macro regressions depend on local JSON snapshots and reduced source
@@ -98,6 +126,12 @@ they have been replaced with clearly synthetic fixtures.
 Full `unittest` discovery can therefore report missing-fixture errors in the
 initial source-only publication. There is no CI badge or all-tests-passing claim
 until a clean clone has been validated.
+
+A separate baseline run of `test_market_exhaustion` before the package move
+also found a pre-existing failure in
+`test_audit_observation_and_summary_export_new_fields`: it expects exhaustion
+fields from the historical unversioned audit, which pins engine 1.0.11.
+That historical test/audit mismatch is not repaired or hidden by this refactor.
 
 ## Offline gold audit
 
@@ -157,8 +191,11 @@ publication because its local input snapshots are intentionally excluded.
 - **No full backup promise:** GitHub contains the reviewed source baseline,
   not a complete copy of the local research workstation.
 
-The project-level `.gitignore` uses a default-deny policy for the initial
-publication. Add precise exceptions only after reviewing file contents and
+The project-level `.gitignore` uses a default-deny policy, with exact exceptions
+for the two reviewed package files as well as the existing root source policy.
+The publication checker mirrors those exact package exceptions; other nested
+source, raw data, caches and local configuration remain excluded.
+Add precise exceptions only after reviewing file contents and
 rights to redistribute data. Already tracked files are not protected by new
 ignore patterns ([GitHub ignore documentation](https://docs.github.com/en/get-started/git-basics/ignoring-files)).
 
