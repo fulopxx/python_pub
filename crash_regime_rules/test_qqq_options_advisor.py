@@ -285,6 +285,24 @@ class UnderlyingAndExportTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 m.Config(**kwargs)
 
+    def test_public_notes_are_user_neutral_and_keep_safety_warning(self):
+        neutral_note = (
+            "Nem használ számlaegyenleget vagy meglévő pozíciókat a szűréshez, "
+            "és nem végez pozíciókezelést."
+        )
+        with TemporaryDirectory() as folder, contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(m.main(["--demo", "--output-dir", folder]), 0)
+            saved = json.loads(
+                (Path(folder)/"demo"/"qqq_options_latest.json").read_text(encoding="utf-8")
+            )
+            self.assertIn(neutral_note, saved["notes"])
+            self.assertIn(neutral_note, out.getvalue())
+            self.assertFalse(saved["execution_allowed"])
+            for personal_reference in ("novemberi opció", "opcióidat"):
+                with self.subTest(personal_reference=personal_reference):
+                    self.assertNotIn(personal_reference, out.getvalue().casefold())
+                    self.assertNotIn(personal_reference, "\n".join(saved["notes"]).casefold())
+
     def test_no_order_or_exercise_api_calls_in_source(self):
         tree = ast.parse(Path(m.__file__).read_text(encoding="utf-8"))
         forbidden = {"placeOrder", "exerciseOptions", "cancelOrder", "reqAccountSummary",
