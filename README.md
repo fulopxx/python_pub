@@ -17,10 +17,10 @@ repeatable offline evaluation rather than claims of predictive performance.
   timezone-aware time series, multiprocessing and automated regression tests.
 - **Technologies:** Python, NumPy, pandas, `ib_insync`, command-line interfaces
   and `unittest`.
-- **Try it:** the project README includes a synthetic options demo that does not
-  require a brokerage connection.
-- **Status:** active research code; original module filenames are preserved
-  during the initial publication phase.
+- **Try it:** run the [synthetic options demo](crash_regime_rules/README.md#quick-start-synthetic-offline-demo)
+  without a brokerage connection.
+- **Status:** active research code. The first package migration preserves
+  existing launch commands and the legacy exhaustion import.
 
 See the [project overview, setup and limitations](crash_regime_rules/README.md).
 
@@ -46,8 +46,8 @@ The existing project names and locations are visible in the
 - **Source-first publication:** local credentials, private configuration, raw
   market histories and generated reports are not part of the toolkit's public
   source baseline.
-- **Incremental improvement:** documentation, clean-clone reproducibility and
-  automated checks are developed before larger structural refactoring.
+- **Incremental improvement:** the toolkit is refactored in small steps,
+  with targeted offline regression checks.
 
 ## Development approach
 
