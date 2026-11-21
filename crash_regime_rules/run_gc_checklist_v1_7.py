@@ -11,8 +11,8 @@ import pandas as pd
 from ib_insync import IB, ContFuture, util
 
 # FONTOS:
-# A modul neve a jelenlegi verziószámozott fájlnak megfelelően:
-from gc_regime_1_0_19 import build_dxy_macro_context, run_gold_checklist
+# Stabil importfelület; a gc_engine.py továbbra is az 1.0.19-es motort rögzíti.
+from gc_engine import build_dxy_macro_context, run_gold_checklist
 from gc_daily_context import fetch_gc_daily_context
 
 

@@ -79,6 +79,15 @@ Run the following selected synthetic/offline tests from this folder:
 .\.venv\Scripts\python.exe -m unittest test_market_structure test_market_transition test_qqq_options_advisor test_gc_audit_conclusions test_gc_audit_resolution test_gc_v19_gap_targets -v
 ```
 
+After the stable-GC-import refactor, run its additional offline wiring checks:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest test_gc_engine -v
+```
+
+These checks verify direct function re-exports, current-runner wiring and the
+separate audit pin. They do not connect to TWS or validate live data.
+
 This is a selected subset, not a claim that the entire historical suite is
 self-contained. Keep older versioned modules that these tests import.
 Some macro regressions depend on local JSON snapshots and reduced source
@@ -111,10 +120,11 @@ not distributed with this project.
 `--step-bars N` overrides the profile interval. A finer grid evaluates more
 observations but does not automatically establish statistical independence.
 
-Entry points pin specific engine versions by filename. At the time of this
-publication the current checklist runner `run_gc_checklist_v1_7.py` imports
-`gc_regime_1_0_19.py`, while the current audit `gc_audit_backtest_v1_3_12.py`
-still pins `gc_regime_1_0_18.py`; rewiring the audit to the newer engine is a
+Engine implementations remain pinned to specific versioned files. The current
+checklist runner `run_gc_checklist_v1_7.py` imports its two engine functions via
+the stable `gc_engine.py` surface, which directly re-exports them from
+`gc_regime_1_0_19.py`. The current audit `gc_audit_backtest_v1_3_12.py`
+still directly pins `gc_regime_1_0_18.py`; rewiring the audit to the newer engine is a
 separate reviewed change, not part of this baseline. The equity-index side
 (`es_regime.py`, `nq_regime.py`, `index_regime.py`) uses unversioned filenames
 instead of per-release copies. Older versioned `gc_regime_*`,
