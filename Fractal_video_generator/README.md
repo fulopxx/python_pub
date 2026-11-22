@@ -54,7 +54,9 @@ try {
 }
 ```
 
-The first preview is computed during startup. Select a colormap such as `plasma`, then click **Start Render**. Wait for the save message and open `video-output\fractal_zoom.mp4` in a video player. The program always writes `fractal_zoom.mp4` in the current working directory; rerunning the render in a session, or launching from PyCharm, does not run the PowerShell overwrite check. Move any output you want to keep before rendering again. The checked-in `fractal_zoom.mp4` next to the script is an existing sample, not an input.
+The first preview is computed during startup. The full preview is centered in the Tkinter canvas and scaled down as needed without changing its aspect ratio. Resizing the canvas redraws the last image without recomputing the fractal. Preview scaling does not affect the frames sent to the MP4 encoder.
+
+Select a colormap such as `plasma`, then click **Start Render**. Wait for the save message and open `video-output\fractal_zoom.mp4` in a video player. The program always writes `fractal_zoom.mp4` in the current working directory; rerunning the render in a session, or launching from PyCharm, does not run the PowerShell overwrite check. Move any output you want to keep before rendering again. The checked-in `fractal_zoom.mp4` next to the script is an existing sample, not an input.
 
 ### PyCharm
 
@@ -76,15 +78,16 @@ There are no command-line options or external presets. Video defaults live in `F
 
 ## Verification and known limitations
 
-The tests used the generator from [`1d33d08` on `main`](https://raw.githubusercontent.com/fulopxx/python_pub/1d33d0833a2c53045bec3705898b36f362dd6183/Fractal_video_generator/fractal_video_generator.py). The reduced test used a temporary copy with smaller render parameters.
+The baseline tests used the generator from [`1d33d08`](https://raw.githubusercontent.com/fulopxx/python_pub/1d33d0833a2c53045bec3705898b36f362dd6183/Fractal_video_generator/fractal_video_generator.py). The preview-fit regression test used `230cc29` from [PR #5](https://github.com/fulopxx/python_pub/pull/5). Both reduced tests used temporary copies with smaller render parameters.
 
 | Verified on Windows | Result |
 | --- | --- |
 | Default-size render, original Numba binding | 1920 × 1080, 90 decoded frames, 30 fps, 3.00 seconds. The exported MP4 played back correctly. |
 | Reduced render, NVIDIA CUDA binding | 320 × 240, 6 decoded frames, 6 fps, 1.00 second. The exported MP4 showed the full frame in `plasma`, and the application exited normally. |
 | Normal PyCharm launch, NVIDIA CUDA binding | Preview, colormap change and normal exit worked without the temporary test launcher. A full-size export was not repeated with this binding. |
+| Preview-fit regression test, NVIDIA CUDA binding | The entire preview remained visible after switching to `plasma`, and closing the window returned exit code `0`. The MP4 played with full framing and visible zoom; FFmpeg decoded all 6 frames at 320 × 240 and 6 fps, for 1.00 second. |
 
-Both new videos were decoded end to end by FFmpeg as H.264 / `yuv420p`. To verify a new export without rendering again, run these commands in the PowerShell session used for setup:
+The test exports were decoded end to end by FFmpeg as H.264 / `yuv420p`. To verify a new export without rendering again, run these commands in the PowerShell session used for setup:
 
 ```powershell
 $ffmpeg = & $py -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
@@ -94,6 +97,5 @@ $ffmpeg = & $py -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe()
 
 Check the reported resolution, frame rate and final decoded frame count, and look for exit code `0`. Open the file separately to assess color, framing and motion.
 
-- **Small preview:** reducing the render dimensions can clip the Tkinter preview because the image shown on its canvas is not resized to fit. The reduced export still contained the full frame.
 - **Matplotlib:** the tested 3.8.4 release warns that `tostring_rgb()` is deprecated. Matplotlib 3.10 removed it, so do not upgrade past the pin without updating and retesting the image capture code ([Matplotlib API changes](https://matplotlib.org/3.10.0/api/prev_api_changes/api_changes_3.10.0.html)).
 - **Render time and memory:** rendering runs synchronously and keeps frames in memory until encoding. Start one render at a time; larger jobs have not been benchmarked.
