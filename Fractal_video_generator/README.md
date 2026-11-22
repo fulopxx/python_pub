@@ -90,9 +90,9 @@ Use **Quick test** to check the export pipeline. Its low pixel count is not inte
 
 ### Read the time estimate
 
-After **Preview**, the app shows an approximate compute-time range per frame and for the full clip. The range comes from timing the three 320 × 180 frames and scaling by pixel count for other resolutions. It **excludes MP4 encoding** and is not an end-to-end render-time prediction. Extrapolation is less reliable at high resolutions.
+The app automatically measures compute time at the selected output resolution. It runs one untimed warm-up frame, then times frames at the start, middle, and end of the zoom. The displayed range uses the fastest and slowest sample and scales by frame count for the clip total. It is a rough estimate, not a guaranteed range, and **excludes MP4 encoding and on-screen display**.
 
-Changing resolution, duration, or FPS updates the estimate from the same samples. Changing the zoom target or colormap requires a new Preview run for that combination.
+Changing the resolution, zoom target, or colormap triggers a new measurement. Changing only the duration or FPS updates the clip total without remeasuring. No **Preview** click is needed, and measuring does not write a file. The UI can briefly pause while computing a frame at high resolutions.
 
 ## Verification and known limitations
 
