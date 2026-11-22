@@ -48,8 +48,13 @@ class FractalGui(tk.Tk):
         control_frame.pack(side=tk.TOP, fill=tk.X)
 
         # Canvas
-        self.canvas = tk.Canvas(self, width=self.width, height=self.height)
+        self.canvas = tk.Canvas(self, width=self.width, height=self.height,
+                                borderwidth=0, highlightthickness=0)
         self.canvas.pack(side=tk.LEFT)
+        self._preview_source = None
+        self._preview_photo = None
+        self._preview_item = self.canvas.create_image(0, 0, anchor=tk.CENTER)
+        self.canvas.bind("<Configure>", self._redraw_preview)
 
         self.option_menu = tk.OptionMenu(control_frame, self.selected_colormap, *self.colormaps)
         self.option_menu.pack(side=tk.LEFT)
@@ -69,9 +74,28 @@ class FractalGui(tk.Tk):
         create_video(self)  # We only pass 'self' here
 
     def update_image(self, img):
-        tk_image = ImageTk.PhotoImage(Image.fromarray(img))
-        self.canvas.create_image(0, 0, anchor='nw', image=tk_image)
-        self.canvas.image = tk_image
+        self._preview_source = Image.fromarray(img)
+        self._redraw_preview()
+
+    def _redraw_preview(self, event=None):
+        if self._preview_source is None:
+            return
+
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+        if width <= 1 or height <= 1:
+            # The first frame can arrive before Tk has laid out the canvas.
+            return
+
+        preview = self._preview_source
+        if preview.width > width or preview.height > height:
+            preview = preview.copy()
+            preview.thumbnail((width, height), Image.Resampling.LANCZOS)
+
+        photo = ImageTk.PhotoImage(preview, master=self.canvas)
+        self.canvas.coords(self._preview_item, width // 2, height // 2)
+        self.canvas.itemconfigure(self._preview_item, image=photo)
+        self._preview_photo = photo
 
     '''
     def initial_frame(self):
