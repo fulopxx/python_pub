@@ -1,3 +1,8 @@
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import numpy as np
 import matplotlib.pyplot as plt
 import imageio
@@ -21,6 +26,50 @@ ZOOM_TARGETS = {
     "Double Spiral Valley": (-0.77568377, 0.13646737),
 }
 
+RENDER_RESOLUTIONS = {
+    "Quick test (160 x 90)": (160, 90),
+    "Tiny (256 x 144)": (256, 144),
+    "Small (320 x 180)": (320, 180),
+    "Draft (480 x 270)": (480, 270),
+    "360p (640 x 360)": (640, 360),
+    "450p (800 x 450)": (800, 450),
+    "540p (960 x 540)": (960, 540),
+    "630p (1120 x 630)": (1120, 630),
+    "HD (1280 x 720)": (1280, 720),
+    "Full HD (1920 x 1080)": (1920, 1080),
+    "QHD (2560 x 1440)": (2560, 1440),
+    "4K UHD (3840 x 2160)": (3840, 2160),
+}
+DEFAULT_RESOLUTION = "Full HD (1920 x 1080)"
+FRAME_RATES = (24, 30, 60)
+DEFAULT_DURATION = "3"
+DEFAULT_FPS = 30
+DEFAULT_ZOOM_LOG = 0.12 * (3 * DEFAULT_FPS - 1)
+
+
+def duration_to_frames(duration_text, fps):
+    if fps not in FRAME_RATES:
+        raise ValueError("Choose 24, 30, or 60 fps.")
+    try:
+        duration = Decimal(duration_text.strip().replace(",", "."))
+    except InvalidOperation as error:
+        raise ValueError("Enter a duration between 0.5 and 60 seconds.") from error
+    if not duration.is_finite() or not Decimal("0.5") <= duration <= Decimal("60"):
+        raise ValueError("Enter a duration between 0.5 and 60 seconds.")
+    return int((duration * fps).to_integral_value(rounding=ROUND_HALF_UP))
+
+
+@dataclass(frozen=True)
+class RenderSettings:
+    width: int
+    height: int
+    fps: int
+    frame_count: int
+    center: tuple[float, float]
+    colormap: str
+    max_iter: int
+    zoom_log: float = DEFAULT_ZOOM_LOG
+
 
 class FractalGui(tk.Tk):
     def __init__(self, *args, **kwargs):
@@ -28,13 +77,10 @@ class FractalGui(tk.Tk):
         self.title('Fractal Generator')
         self.geometry('1800x1800')  # slightly adjust window size to accommodate side by side layout
 
-        # Video parameters
-        self.n_frames = 90 # The number of frames in the video
-        self.width = 1920 # The width of each frame
-        self.height = 1080 # The height of each frame
-        self.zoom_speed = 0.12 # The zoom speed for the fractal
-        self.fps = 30 # The frames per second for the video
-        self.max_iter = 256 # Max iteration
+        # The existing startup preview is independent of the output resolution.
+        self.preview_width, self.preview_height = RENDER_RESOLUTIONS[DEFAULT_RESOLUTION]
+        self.max_iter = 256
+        self._rendering = False
 
         # Status
         self.status = tk.StringVar()
@@ -75,8 +121,38 @@ class FractalGui(tk.Tk):
         ttk.Label(zoom_frame, textvariable=self.zoom_coordinates,
                   font=self._zoom_coords_font).pack(side=tk.LEFT, padx=(8, 0))
 
+        settings_frame = ttk.Frame(self)
+        settings_frame.pack(side=tk.TOP, fill=tk.X, padx=4, pady=2)
+        self.selected_resolution = tk.StringVar(value=DEFAULT_RESOLUTION)
+        self.duration_seconds = tk.StringVar(value=DEFAULT_DURATION)
+        self.selected_fps = tk.StringVar(value=str(DEFAULT_FPS))
+        self.render_summary = tk.StringVar()
+
+        ttk.Label(settings_frame, text="Resolution:").pack(side=tk.LEFT)
+        self.resolution_menu = ttk.Combobox(
+            settings_frame, textvariable=self.selected_resolution,
+            values=tuple(RENDER_RESOLUTIONS), state="readonly", width=23)
+        self.resolution_menu.pack(side=tk.LEFT, padx=(4, 8))
+
+        ttk.Label(settings_frame, text="Duration (s):").pack(side=tk.LEFT)
+        self.duration_entry = ttk.Entry(
+            settings_frame, textvariable=self.duration_seconds, width=7)
+        self.duration_entry.pack(side=tk.LEFT, padx=(4, 8))
+
+        ttk.Label(settings_frame, text="FPS:").pack(side=tk.LEFT)
+        self.fps_menu = ttk.Combobox(
+            settings_frame, textvariable=self.selected_fps,
+            values=FRAME_RATES, state="readonly", width=4)
+        self.fps_menu.pack(side=tk.LEFT, padx=(4, 0))
+
+        ttk.Label(self, textvariable=self.render_summary).pack(
+            side=tk.TOP, anchor="w", padx=4, pady=2)
+        for variable in (self.selected_resolution, self.duration_seconds, self.selected_fps):
+            variable.trace_add("write", self.update_render_summary)
+        self.update_render_summary()
+
         # Canvas
-        self.canvas = tk.Canvas(self, width=self.width, height=self.height,
+        self.canvas = tk.Canvas(self, width=self.preview_width, height=self.preview_height,
                                 borderwidth=0, highlightthickness=0)
         self.canvas.pack(side=tk.LEFT)
         self._preview_source = None
@@ -97,19 +173,58 @@ class FractalGui(tk.Tk):
         self.update_zoom_target()
 
     def start_render(self):
-        if self.zoom_target_menu.instate(["disabled"]):
+        if self._rendering:
             return
+        try:
+            settings = self.get_render_settings()
+        except ValueError as error:
+            self.status.set(f"Status: {error}")
+            return
+
+        self._rendering = True
         self.status.set("Status: Rendering...")
-        self.zoom_target_menu.state(["disabled"])
+        self.set_render_controls_enabled(False)
         try:
             self.update_idletasks()
-            create_video(self)
+            create_video(self, settings)
         finally:
+            self._rendering = False
             try:
-                self.zoom_target_menu.state(["!disabled"])
+                self.set_render_controls_enabled(True)
             except tk.TclError:
                 # The window may have been closed while rendering.
                 pass
+
+    def set_render_controls_enabled(self, enabled):
+        ttk_state = ["!disabled"] if enabled else ["disabled"]
+        for widget in (self.zoom_target_menu, self.resolution_menu,
+                       self.duration_entry, self.fps_menu):
+            widget.state(ttk_state)
+        tk_state = "normal" if enabled else "disabled"
+        self.option_menu.configure(state=tk_state)
+        self.start_button.configure(state=tk_state)
+
+    def get_render_settings(self):
+        width, height = RENDER_RESOLUTIONS[self.selected_resolution.get()]
+        fps = int(self.selected_fps.get())
+        frame_count = duration_to_frames(self.duration_seconds.get(), fps)
+        return RenderSettings(width, height, fps, frame_count,
+                              self.get_zoom_center(), self.selected_colormap.get(),
+                              self.max_iter)
+
+    def update_render_summary(self, *args):
+        try:
+            settings = self.get_render_settings()
+        except ValueError as error:
+            self.render_summary.set(str(error))
+            return
+        duration = settings.frame_count / settings.fps
+        summary = (
+            f"{settings.width} x {settings.height} | {settings.frame_count} frames "
+            f"at {settings.fps} fps | {duration:.2f} s")
+        if final_grid_has_duplicates(settings):
+            summary += " | Final zoom: float32 grid repeats some coordinates"
+        self.render_summary.set(summary)
 
     def get_zoom_center(self):
         return ZOOM_TARGETS[self.selected_zoom_target.get()]
@@ -117,6 +232,7 @@ class FractalGui(tk.Tk):
     def update_zoom_target(self, event=None):
         x_center, y_center = self.get_zoom_center()
         self.zoom_coordinates.set(f"x = {x_center!r}, y = {y_center!r}")
+        self.update_render_summary()
         self.initial_frame()
 
     def update_image(self, img):
@@ -164,7 +280,9 @@ class FractalGui(tk.Tk):
         fig, ax = plt.subplots()
         zoom_level = 1.0
         x_center, y_center = self.get_zoom_center()
-        draw(x_center - zoom_level, x_center + zoom_level, y_center - zoom_level, y_center + zoom_level, self.width, self.height,
+        draw(x_center - zoom_level, x_center + zoom_level,
+             y_center - zoom_level, y_center + zoom_level,
+             self.preview_width, self.preview_height,
              self.max_iter, ax, self.selected_colormap.get())
         ax.axis('off')
         fig.canvas.draw()
@@ -426,31 +544,36 @@ def draw(xmin, xmax, ymin, ymax, width, height, max_iter, ax):
 '''
 
 
-#original function code
-def generate_frames(gui):
-    frames = []
-    fig, ax = plt.subplots()
+def frame_bounds(settings, index):
+    # Keep the same endpoint when duration or FPS changes.
+    progress = index / max(1, settings.frame_count - 1)
+    half_height = np.exp(-settings.zoom_log * progress)
+    half_width = half_height * settings.width / settings.height
+    x, y = settings.center
+    return x - half_width, x + half_width, y - half_height, y + half_height
 
-    x_center, y_center = gui.get_zoom_center()
 
-    for i in range(gui.n_frames):
-        print(f"Generating frame {i+1} of {gui.n_frames}")
-        gui.status.set("Status: Generating frame " + str(i+1) + " of " + str(gui.n_frames) + "...")
-        ax.clear()
-        zoom_level = np.exp(-gui.zoom_speed * i)
-        draw(x_center - zoom_level, x_center + zoom_level, y_center - zoom_level, y_center + zoom_level, gui.width, gui.height, gui.max_iter, ax, gui.selected_colormap.get())
-        ax.axis('off') # to get rid of the axes for the video
-        fig.canvas.draw()
-        image = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8').reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        frames.append(image)
+def final_grid_has_duplicates(settings):
+    xmin, xmax, ymin, ymax = frame_bounds(settings, settings.frame_count - 1)
+    x = np.linspace(xmin, xmax, settings.width, dtype=np.float32)
+    y = np.linspace(ymin, ymax, settings.height, dtype=np.float32)
+    return bool(np.any(x[1:] == x[:-1]) or np.any(y[1:] == y[:-1]))
 
-        # Display image in GUI
-        gui.update_image(image)
-        gui.update_idletasks()
-        gui.update()
 
-    plt.close(fig)
-    return frames
+def generate_frames(settings):
+    palette = plt.get_cmap(settings.colormap)
+    levels = np.arange(settings.max_iter + 1, dtype=np.float64)
+    for index in range(settings.frame_count):
+        _, _, counts = mandelbrot_set(
+            *frame_bounds(settings, index), settings.width, settings.height, settings.max_iter)
+        low, high = int(counts.min()), int(counts.max())
+        # Normalize a small lookup table, not a full-resolution float image.
+        normalized = (
+            np.clip((levels - low) / (high - low), 0, 1)
+            if high > low else np.zeros_like(levels)
+        )
+        rgb = palette(normalized, bytes=True)[:, :3]
+        yield rgb[counts]
 
 '''
 #this is the Distance Estimation coloring technique
@@ -481,13 +604,27 @@ def generate_frames(gui):
     return frames
 '''
 
-def create_video(gui):
+def create_video(gui, settings):
     try:
-        print("Starting to generate frames.")
-        frames = generate_frames(gui)
-        print("Finished generating frames. Now creating video.")
-        imageio.mimsave('fractal_zoom.mp4', frames, fps=gui.fps, macro_block_size=None, codec='libx264', quality=10, ffmpeg_params=['-pix_fmt', 'yuv420p'], output_params=['-s', f'{gui.width}x{gui.height}'])
-        #imageio.mimsave('fractal_zoom.mp4', frames, fps=gui.fps)
+        output = Path("fractal_zoom.mp4")
+        # Keep the previous output intact if calculation or encoding fails.
+        with TemporaryDirectory(prefix=".fractal-render-", dir=output.resolve().parent) as temp_dir:
+            partial = Path(temp_dir) / output.name
+            with imageio.get_writer(
+                    partial, format="FFMPEG", mode="I", fps=settings.fps,
+                    macro_block_size=None, codec="libx264", quality=10,
+                    pixelformat="yuv420p") as writer:
+                for index, frame in enumerate(generate_frames(settings), start=1):
+                    message = f"Generating frame {index} of {settings.frame_count}"
+                    print(message)
+                    gui.status.set(f"Status: {message}...")
+                    writer.append_data(frame)
+                    gui.update_image(frame)
+                    gui.update()
+            if not partial.is_file() or partial.stat().st_size == 0:
+                raise RuntimeError("FFmpeg did not produce an output video.")
+            partial.replace(output)
+
         print("Video saved as fractal_zoom.mp4.")
         gui.status.set("Status: Video saved as fractal_zoom.mp4.")
     except Exception as e:
