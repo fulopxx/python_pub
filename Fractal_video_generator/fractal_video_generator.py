@@ -48,6 +48,7 @@ DEFAULT_FPS = 30
 DEFAULT_ZOOM_LOG = 0.12 * (3 * DEFAULT_FPS - 1)
 PREVIEW_RESOLUTION = (320, 180)
 PREVIEW_STAGES = ("Start", "Middle", "End")
+ESTIMATE_DEBOUNCE_MS = 250
 MAX_DISPLAY_UPSCALE = 2.0
 
 
@@ -83,16 +84,8 @@ def fit_preview_size(source_size, canvas_size):
     return max(1, round(source_width * scale)), max(1, round(source_height * scale))
 
 
-def preview_timing_key(settings):
-    # Resolutions share an aspect ratio, and all durations use the same zoom path.
-    return settings.center, settings.colormap, settings.max_iter, settings.zoom_log
-
-
 def format_render_estimate(settings, samples):
-    preview_width, preview_height = PREVIEW_RESOLUTION
-    pixel_ratio = settings.width * settings.height / (preview_width * preview_height)
-    fastest = min(samples) * pixel_ratio
-    slowest = max(samples) * pixel_ratio
+    fastest, slowest = min(samples), max(samples)
 
     def total_time(seconds_per_frame):
         seconds = seconds_per_frame * settings.frame_count
@@ -101,11 +94,11 @@ def format_render_estimate(settings, samples):
         minutes, seconds = divmod(round(seconds), 60)
         return f"{minutes}m {seconds:02d}s"
 
-    basis = "Measured at 320 x 180" if pixel_ratio == 1 else "Extrapolated from 320 x 180"
     return (
         f"Approx. compute: {fastest:.3f}-{slowest:.3f} s/frame | "
         f"{total_time(fastest)} to {total_time(slowest)} total\n"
-        f"{basis} (3 frames); MP4 encoding not included."
+        f"Measured at {settings.width} x {settings.height} (3 frames); "
+        "MP4 encoding and display not included."
     )
 
 
@@ -134,8 +127,10 @@ class FractalGui(tk.Tk):
         self.max_iter = 256
         self._rendering = False
         self._preview_running = False
-        self._preview_timing = None
         self._preview_job = None
+        self._estimate_job = None
+        self._estimate_settings = None
+        self._estimate_samples = None
 
         # Status
         self.status = tk.StringVar()
@@ -207,7 +202,6 @@ class FractalGui(tk.Tk):
             side=tk.TOP, anchor="w", padx=4, pady=(0, 2))
         for variable in (self.selected_resolution, self.duration_seconds, self.selected_fps):
             variable.trace_add("write", self.update_render_summary)
-        self.update_render_summary()
 
         # Canvas
         self.canvas = tk.Canvas(self, width=self.preview_width, height=self.preview_height,
@@ -243,6 +237,7 @@ class FractalGui(tk.Tk):
             return
 
         self._rendering = True
+        self.pause_estimate()
         self.status.set("Status: Rendering...")
         self.set_render_controls_enabled(False)
         try:
@@ -252,6 +247,7 @@ class FractalGui(tk.Tk):
             self._rendering = False
             try:
                 self.set_render_controls_enabled(True)
+                self.update_render_summary()
             except tk.TclError:
                 # The window may have been closed while rendering.
                 pass
@@ -276,52 +272,100 @@ class FractalGui(tk.Tk):
             return
 
         self._preview_running = True
-        self._preview_timing = None
+        self.pause_estimate()
         self.set_render_controls_enabled(False)
         self.status.set("Status: Building RAM preview...")
-        self.estimate_status.set("Measuring 3 preview frames at 320 x 180...")
         width, height = PREVIEW_RESOLUTION
         preview_settings = replace(
             settings, width=width, height=height, frame_count=len(PREVIEW_STAGES))
         self._preview_job = self.after(
-            1, self.capture_preview_frame, preview_settings, generate_frames(preview_settings), [], [])
+            1, self.capture_preview_frame, generate_frames(preview_settings), [])
 
-    def capture_preview_frame(self, settings, frames, images, samples):
+    def capture_preview_frame(self, frames, images):
         self._preview_job = None
         try:
-            started = perf_counter()
-            frame = next(frames)
-            samples.append(perf_counter() - started)
-            images.append(frame)
+            images.append(next(frames))
             if len(images) < len(PREVIEW_STAGES):
                 self._preview_job = self.after(
-                    1, self.capture_preview_frame, settings, frames, images, samples)
+                    1, self.capture_preview_frame, frames, images)
                 return
 
             self._preview_source = make_preview_storyboard(images)
             self._redraw_preview()
-            self._preview_timing = preview_timing_key(settings), tuple(samples)
             self.status.set("Status: RAM preview ready (no video written).")
         except Exception as error:
             self.status.set(f"Status: Preview failed: {error}")
-            self.estimate_status.set("Compute estimate unavailable: Preview failed.")
             traceback.print_exc()
 
         self._preview_running = False
         self.set_render_controls_enabled(True)
-        if self._preview_timing is not None:
+        self.update_render_summary()
+
+    def cancel_estimate(self):
+        if self._estimate_job is not None:
+            self.after_cancel(self._estimate_job)
+            self._estimate_job = None
+
+    def pause_estimate(self):
+        if self._estimate_job is not None:
+            self.cancel_estimate()
+            self.estimate_status.set("Compute estimate paused.")
+
+    def update_render_estimate(self, render_settings):
+        # Sample the same normalized zoom positions regardless of duration/FPS.
+        settings = self.get_frame_settings(DEFAULT_FPS, len(PREVIEW_STAGES))
+        if settings != self._estimate_settings:
+            self.cancel_estimate()
+            self._estimate_settings = settings
+            self._estimate_samples = None
+
+        if self._estimate_samples is not None:
+            if render_settings is None:
+                self.estimate_status.set("Enter a valid duration and FPS to read the compute estimate.")
+            else:
+                self.estimate_status.set(format_render_estimate(render_settings, self._estimate_samples))
+        elif not (self._rendering or self._preview_running) and self._estimate_job is None:
+            self.estimate_status.set(f"Measuring compute at {settings.width} x {settings.height}...")
+            # Repeat the first position once as an untimed warm-up.
+            indices = (0, *range(settings.frame_count))
+            self._estimate_job = self.after(
+                ESTIMATE_DEBOUNCE_MS, self.capture_estimate_frame,
+                generate_frames(settings, indices=indices), [], True)
+
+    def capture_estimate_frame(self, frames, samples, warmup):
+        self._estimate_job = None
+        try:
+            if warmup:
+                next(frames)
+            else:
+                started = perf_counter()
+                next(frames)
+                samples.append(perf_counter() - started)
+        except Exception as error:
+            self.estimate_status.set(f"Compute estimate unavailable: {error}")
+            traceback.print_exc()
+            return
+
+        if len(samples) < len(PREVIEW_STAGES):
+            self._estimate_job = self.after(1, self.capture_estimate_frame, frames, samples, False)
+        else:
+            self._estimate_samples = tuple(samples)
             self.update_render_summary()
 
     def destroy(self):
+        self.cancel_estimate()
         if self._preview_job is not None:
             self.after_cancel(self._preview_job)
             self._preview_job = None
         super().destroy()
 
     def get_render_settings(self):
-        width, height = RENDER_RESOLUTIONS[self.selected_resolution.get()]
         fps = int(self.selected_fps.get())
         frame_count = duration_to_frames(self.duration_seconds.get(), fps)
+        return self.get_frame_settings(fps, frame_count)
+
+    def get_frame_settings(self, fps, frame_count):
+        width, height = RENDER_RESOLUTIONS[self.selected_resolution.get()]
         return RenderSettings(width, height, fps, frame_count,
                               self.get_zoom_center(), self.selected_colormap.get(),
                               self.max_iter)
@@ -331,7 +375,7 @@ class FractalGui(tk.Tk):
             settings = self.get_render_settings()
         except ValueError as error:
             self.render_summary.set(str(error))
-            self.estimate_status.set("Compute estimate unavailable: enter valid render settings.")
+            self.update_render_estimate(None)
             return
         duration = settings.frame_count / settings.fps
         summary = (
@@ -340,11 +384,7 @@ class FractalGui(tk.Tk):
         if final_grid_has_duplicates(settings):
             summary += " | Final zoom: float32 grid repeats some coordinates"
         self.render_summary.set(summary)
-        if not self._preview_running:
-            if self._preview_timing is None or self._preview_timing[0] != preview_timing_key(settings):
-                self.estimate_status.set("Approx. compute time: click Preview to measure this target.")
-            else:
-                self.estimate_status.set(format_render_estimate(settings, self._preview_timing[1]))
+        self.update_render_estimate(settings)
 
     def get_zoom_center(self):
         return ZOOM_TARGETS[self.selected_zoom_target.get()]
@@ -681,10 +721,12 @@ def final_grid_has_duplicates(settings):
     return bool(np.any(x[1:] == x[:-1]) or np.any(y[1:] == y[:-1]))
 
 
-def generate_frames(settings):
+def generate_frames(settings, indices=None):
     palette = plt.get_cmap(settings.colormap)
     levels = np.arange(settings.max_iter + 1, dtype=np.float64)
-    for index in range(settings.frame_count):
+    if indices is None:
+        indices = range(settings.frame_count)
+    for index in indices:
         _, _, counts = mandelbrot_set(
             *frame_bounds(settings, index), settings.width, settings.height, settings.max_iter)
         low, high = int(counts.min()), int(counts.max())
