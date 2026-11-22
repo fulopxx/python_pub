@@ -1,0 +1,13 @@
+# Tested setup: Windows x64, CPython 3.9, NVIDIA CUDA Toolkit 12.1.
+# Set NUMBA_CUDA_USE_NVIDIA_BINDING=1 before launching.
+numpy==1.26.4
+numba==0.58.1
+llvmlite==0.41.1
+matplotlib==3.8.4
+Pillow==10.3.0
+imageio==2.34.0
+imageio-ffmpeg==0.4.9
+torch @ https://download-r2.pytorch.org/whl/cu121/torch-2.1.0%2Bcu121-cp39-cp39-win_amd64.whl#sha256=ff0ee0b7ab3d6cfbf7875c8b1d130309ee5a18fbf2fda11f3da86a783e6e679c
+cuda-python==12.1.0
+pywin32==306
+Cython==3.3.1
