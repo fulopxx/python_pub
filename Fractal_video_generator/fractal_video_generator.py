@@ -1,7 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import perf_counter
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,7 +12,7 @@ import traceback
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import ttk
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 import matplotlib.cm as cm
 import torch
 
@@ -45,6 +46,9 @@ FRAME_RATES = (24, 30, 60)
 DEFAULT_DURATION = "3"
 DEFAULT_FPS = 30
 DEFAULT_ZOOM_LOG = 0.12 * (3 * DEFAULT_FPS - 1)
+PREVIEW_RESOLUTION = (320, 180)
+PREVIEW_STAGES = ("Start", "Middle", "End")
+MAX_DISPLAY_UPSCALE = 2.0
 
 
 def duration_to_frames(duration_text, fps):
@@ -71,6 +75,54 @@ class RenderSettings:
     zoom_log: float = DEFAULT_ZOOM_LOG
 
 
+def fit_preview_size(source_size, canvas_size):
+    source_width, source_height = source_size
+    canvas_width, canvas_height = canvas_size
+    scale = min(canvas_width / source_width, canvas_height / source_height,
+                MAX_DISPLAY_UPSCALE)
+    return max(1, round(source_width * scale)), max(1, round(source_height * scale))
+
+
+def preview_timing_key(settings):
+    # Resolutions share an aspect ratio, and all durations use the same zoom path.
+    return settings.center, settings.colormap, settings.max_iter, settings.zoom_log
+
+
+def format_render_estimate(settings, samples):
+    preview_width, preview_height = PREVIEW_RESOLUTION
+    pixel_ratio = settings.width * settings.height / (preview_width * preview_height)
+    fastest = min(samples) * pixel_ratio
+    slowest = max(samples) * pixel_ratio
+
+    def total_time(seconds_per_frame):
+        seconds = seconds_per_frame * settings.frame_count
+        if seconds < 60:
+            return f"{seconds:.2f} s"
+        minutes, seconds = divmod(round(seconds), 60)
+        return f"{minutes}m {seconds:02d}s"
+
+    basis = "Measured at 320 x 180" if pixel_ratio == 1 else "Extrapolated from 320 x 180"
+    return (
+        f"Approx. compute: {fastest:.3f}-{slowest:.3f} s/frame | "
+        f"{total_time(fastest)} to {total_time(slowest)} total\n"
+        f"{basis} (3 frames); MP4 encoding not included."
+    )
+
+
+def make_preview_storyboard(frames):
+    width, height = PREVIEW_RESOLUTION
+    gap, caption_height = 6, 22
+    storyboard = Image.new(
+        "RGB", (len(PREVIEW_STAGES) * width + (len(PREVIEW_STAGES) - 1) * gap,
+                height + caption_height), (24, 24, 24))
+    captions = ImageDraw.Draw(storyboard)
+    for index, (stage, frame) in enumerate(zip(PREVIEW_STAGES, frames)):
+        left = index * (width + gap)
+        captions.text((left + 6, 5), stage, fill="white")
+        storyboard.paste(Image.fromarray(frame), (left, caption_height))
+    return storyboard
+
+
 class FractalGui(tk.Tk):
     def __init__(self, *args, **kwargs):
         tk.Tk.__init__(self, *args, **kwargs)
@@ -81,6 +133,9 @@ class FractalGui(tk.Tk):
         self.preview_width, self.preview_height = RENDER_RESOLUTIONS[DEFAULT_RESOLUTION]
         self.max_iter = 256
         self._rendering = False
+        self._preview_running = False
+        self._preview_timing = None
+        self._preview_job = None
 
         # Status
         self.status = tk.StringVar()
@@ -95,7 +150,7 @@ class FractalGui(tk.Tk):
         ]
         self.selected_colormap = tk.StringVar()
         self.selected_colormap.set(self.colormaps[0])  # set default value
-        self.selected_colormap.trace('w', self.update_initial_frame)  # Add callback for variable change
+        self.selected_colormap.trace_add("write", self.update_initial_frame)
 
         # Control Frame
         control_frame = tk.Frame(self)
@@ -127,6 +182,7 @@ class FractalGui(tk.Tk):
         self.duration_seconds = tk.StringVar(value=DEFAULT_DURATION)
         self.selected_fps = tk.StringVar(value=str(DEFAULT_FPS))
         self.render_summary = tk.StringVar()
+        self.estimate_status = tk.StringVar()
 
         ttk.Label(settings_frame, text="Resolution:").pack(side=tk.LEFT)
         self.resolution_menu = ttk.Combobox(
@@ -147,6 +203,8 @@ class FractalGui(tk.Tk):
 
         ttk.Label(self, textvariable=self.render_summary).pack(
             side=tk.TOP, anchor="w", padx=4, pady=2)
+        ttk.Label(self, textvariable=self.estimate_status, justify=tk.LEFT).pack(
+            side=tk.TOP, anchor="w", padx=4, pady=(0, 2))
         for variable in (self.selected_resolution, self.duration_seconds, self.selected_fps):
             variable.trace_add("write", self.update_render_summary)
         self.update_render_summary()
@@ -154,7 +212,7 @@ class FractalGui(tk.Tk):
         # Canvas
         self.canvas = tk.Canvas(self, width=self.preview_width, height=self.preview_height,
                                 borderwidth=0, highlightthickness=0)
-        self.canvas.pack(side=tk.LEFT)
+        self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self._preview_source = None
         self._preview_photo = None
         self._preview_item = self.canvas.create_image(0, 0, anchor=tk.CENTER)
@@ -166,6 +224,9 @@ class FractalGui(tk.Tk):
         self.start_button = tk.Button(control_frame, text="Start Render", command=self.start_render)
         self.start_button.pack(side=tk.LEFT)
 
+        self.preview_button = tk.Button(control_frame, text="Preview", command=self.start_preview)
+        self.preview_button.pack(side=tk.LEFT)
+
         self.status_label = tk.Label(control_frame, textvariable=self.status)
         self.status_label.pack(side=tk.LEFT)
 
@@ -173,7 +234,7 @@ class FractalGui(tk.Tk):
         self.update_zoom_target()
 
     def start_render(self):
-        if self._rendering:
+        if self._rendering or self._preview_running:
             return
         try:
             settings = self.get_render_settings()
@@ -203,6 +264,59 @@ class FractalGui(tk.Tk):
         tk_state = "normal" if enabled else "disabled"
         self.option_menu.configure(state=tk_state)
         self.start_button.configure(state=tk_state)
+        self.preview_button.configure(state=tk_state)
+
+    def start_preview(self):
+        if self._rendering or self._preview_running:
+            return
+        try:
+            settings = self.get_render_settings()
+        except ValueError as error:
+            self.status.set(f"Status: {error}")
+            return
+
+        self._preview_running = True
+        self._preview_timing = None
+        self.set_render_controls_enabled(False)
+        self.status.set("Status: Building RAM preview...")
+        self.estimate_status.set("Measuring 3 preview frames at 320 x 180...")
+        width, height = PREVIEW_RESOLUTION
+        preview_settings = replace(
+            settings, width=width, height=height, frame_count=len(PREVIEW_STAGES))
+        self._preview_job = self.after(
+            1, self.capture_preview_frame, preview_settings, generate_frames(preview_settings), [], [])
+
+    def capture_preview_frame(self, settings, frames, images, samples):
+        self._preview_job = None
+        try:
+            started = perf_counter()
+            frame = next(frames)
+            samples.append(perf_counter() - started)
+            images.append(frame)
+            if len(images) < len(PREVIEW_STAGES):
+                self._preview_job = self.after(
+                    1, self.capture_preview_frame, settings, frames, images, samples)
+                return
+
+            self._preview_source = make_preview_storyboard(images)
+            self._redraw_preview()
+            self._preview_timing = preview_timing_key(settings), tuple(samples)
+            self.status.set("Status: RAM preview ready (no video written).")
+        except Exception as error:
+            self.status.set(f"Status: Preview failed: {error}")
+            self.estimate_status.set("Compute estimate unavailable: Preview failed.")
+            traceback.print_exc()
+
+        self._preview_running = False
+        self.set_render_controls_enabled(True)
+        if self._preview_timing is not None:
+            self.update_render_summary()
+
+    def destroy(self):
+        if self._preview_job is not None:
+            self.after_cancel(self._preview_job)
+            self._preview_job = None
+        super().destroy()
 
     def get_render_settings(self):
         width, height = RENDER_RESOLUTIONS[self.selected_resolution.get()]
@@ -217,6 +331,7 @@ class FractalGui(tk.Tk):
             settings = self.get_render_settings()
         except ValueError as error:
             self.render_summary.set(str(error))
+            self.estimate_status.set("Compute estimate unavailable: enter valid render settings.")
             return
         duration = settings.frame_count / settings.fps
         summary = (
@@ -225,6 +340,11 @@ class FractalGui(tk.Tk):
         if final_grid_has_duplicates(settings):
             summary += " | Final zoom: float32 grid repeats some coordinates"
         self.render_summary.set(summary)
+        if not self._preview_running:
+            if self._preview_timing is None or self._preview_timing[0] != preview_timing_key(settings):
+                self.estimate_status.set("Approx. compute time: click Preview to measure this target.")
+            else:
+                self.estimate_status.set(format_render_estimate(settings, self._preview_timing[1]))
 
     def get_zoom_center(self):
         return ZOOM_TARGETS[self.selected_zoom_target.get()]
@@ -250,9 +370,9 @@ class FractalGui(tk.Tk):
             return
 
         preview = self._preview_source
-        if preview.width > width or preview.height > height:
-            preview = preview.copy()
-            preview.thumbnail((width, height), Image.Resampling.LANCZOS)
+        fitted_size = fit_preview_size(preview.size, (width, height))
+        if fitted_size != preview.size:
+            preview = preview.resize(fitted_size, Image.Resampling.LANCZOS)
 
         photo = ImageTk.PhotoImage(preview, master=self.canvas)
         self.canvas.coords(self._preview_item, width // 2, height // 2)
@@ -293,6 +413,7 @@ class FractalGui(tk.Tk):
 
 
     def update_initial_frame(self, *args):  # New function to handle colormap change
+        self.update_render_summary()
         self.initial_frame()
 
 
