@@ -4,6 +4,7 @@ import imageio
 from numba import cuda, vectorize, int64, float32
 import traceback
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import ttk
 from PIL import Image, ImageTk
 import matplotlib.cm as cm
@@ -13,6 +14,13 @@ import torch
 #profiling
 import cProfile
 '''
+
+ZOOM_TARGETS = {
+    "Original": (0.10150891662818479, 0.6330939302717072),
+    "Seahorse Valley": (-0.74364386269, 0.13182590271),
+    "Double Spiral Valley": (-0.77568377, 0.13646737),
+}
+
 
 class FractalGui(tk.Tk):
     def __init__(self, *args, **kwargs):
@@ -47,6 +55,26 @@ class FractalGui(tk.Tk):
         control_frame = tk.Frame(self)
         control_frame.pack(side=tk.TOP, fill=tk.X)
 
+        # Keep the target and its coordinates together on a separate control row.
+        zoom_frame = ttk.Frame(self)
+        zoom_frame.pack(side=tk.TOP, fill=tk.X, padx=4, pady=2)
+        ttk.Label(zoom_frame, text="Zoom target:").pack(side=tk.LEFT, padx=(0, 5))
+        self.selected_zoom_target = tk.StringVar(value="Original")
+        self.zoom_target_menu = ttk.Combobox(
+            zoom_frame, textvariable=self.selected_zoom_target,
+            values=tuple(ZOOM_TARGETS), state="readonly", width=22)
+        self.zoom_target_menu.pack(side=tk.LEFT)
+        self.zoom_target_menu.bind("<<ComboboxSelected>>", self.update_zoom_target)
+
+        self.zoom_coordinates = tk.StringVar()
+        self._zoom_coords_font = tkfont.nametofont("TkDefaultFont").copy()
+        default_size = self._zoom_coords_font.cget("size")
+        smaller_size = max(1, abs(default_size) - 2)
+        self._zoom_coords_font.configure(
+            size=smaller_size if default_size >= 0 else -smaller_size)
+        ttk.Label(zoom_frame, textvariable=self.zoom_coordinates,
+                  font=self._zoom_coords_font).pack(side=tk.LEFT, padx=(8, 0))
+
         # Canvas
         self.canvas = tk.Canvas(self, width=self.width, height=self.height,
                                 borderwidth=0, highlightthickness=0)
@@ -66,12 +94,30 @@ class FractalGui(tk.Tk):
         self.status_label.pack(side=tk.LEFT)
 
         # Render the first frame
-        self.initial_frame()
+        self.update_zoom_target()
 
     def start_render(self):
+        if self.zoom_target_menu.instate(["disabled"]):
+            return
         self.status.set("Status: Rendering...")
-        self.update_idletasks()
-        create_video(self)  # We only pass 'self' here
+        self.zoom_target_menu.state(["disabled"])
+        try:
+            self.update_idletasks()
+            create_video(self)
+        finally:
+            try:
+                self.zoom_target_menu.state(["!disabled"])
+            except tk.TclError:
+                # The window may have been closed while rendering.
+                pass
+
+    def get_zoom_center(self):
+        return ZOOM_TARGETS[self.selected_zoom_target.get()]
+
+    def update_zoom_target(self, event=None):
+        x_center, y_center = self.get_zoom_center()
+        self.zoom_coordinates.set(f"x = {x_center!r}, y = {y_center!r}")
+        self.initial_frame()
 
     def update_image(self, img):
         self._preview_source = Image.fromarray(img)
@@ -117,8 +163,7 @@ class FractalGui(tk.Tk):
     def initial_frame(self):
         fig, ax = plt.subplots()
         zoom_level = 1.0
-        x_center = -0.75  # x-coordinate of the center of the zoom
-        y_center = 0.0  # y-coordinate of the center of the zoom
+        x_center, y_center = self.get_zoom_center()
         draw(x_center - zoom_level, x_center + zoom_level, y_center - zoom_level, y_center + zoom_level, self.width, self.height,
              self.max_iter, ax, self.selected_colormap.get())
         ax.axis('off')
@@ -386,8 +431,7 @@ def generate_frames(gui):
     frames = []
     fig, ax = plt.subplots()
 
-    x_center = 0.10150891662818479
-    y_center = 0.6330939302717072
+    x_center, y_center = gui.get_zoom_center()
 
     for i in range(gui.n_frames):
         print(f"Generating frame {i+1} of {gui.n_frames}")
