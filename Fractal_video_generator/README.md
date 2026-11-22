@@ -1,8 +1,8 @@
 # Fractal Video Generator
 
-A Windows-tested Python desktop application that renders a Mandelbrot zoom to an H.264 MP4. The Tkinter interface previews the fractal, lets you choose a Matplotlib colormap, and shows render progress. The active renderer uses Numba and CUDA on an NVIDIA GPU.
+A Windows-tested Python desktop application for rendering Mandelbrot zooms to H.264 MP4. The Tkinter interface lets you choose a zoom target, colormap, resolution, duration, and frame rate. Preview the start, middle, and end of the zoom and see an approximate compute time before exporting. The renderer uses Numba and CUDA on an NVIDIA GPU.
 
-[Interface screenshot](GUI.jpg) · [Sample video](fractal_zoom.mp4)
+[Earlier interface screenshot](GUI.jpg) · [Sample video](fractal_zoom.mp4)
 
 ## Requirements
 
@@ -54,38 +54,54 @@ try {
 }
 ```
 
-The first preview is computed during startup. The full preview is centered in the Tkinter canvas and scaled down as needed without changing its aspect ratio. Resizing the canvas redraws the last image without recomputing the fractal. Preview scaling does not affect the frames sent to the MP4 encoder.
-
-Select a colormap such as `plasma`, then click **Start Render**. Wait for the save message and open `video-output\fractal_zoom.mp4` in a video player. The program always writes `fractal_zoom.mp4` in the current working directory; rerunning the render in a session, or launching from PyCharm, does not run the PowerShell overwrite check. Move any output you want to keep before rendering again. The checked-in `fractal_zoom.mp4` next to the script is an existing sample, not an input.
-
 ### PyCharm
 
 Create or edit a Python run configuration for `fractal_video_generator.py`. Select the project's dedicated Python 3.9 virtual environment, set **Working directory** to the existing `video-output` folder, and add `NUMBA_CUDA_USE_NVIDIA_BINDING=1` under **Environment variables**. Keep any existing variables, such as `PYTHONUNBUFFERED=1`. PyCharm is optional; the PowerShell launch above uses the same project settings.
 
-## Render settings
+## Choose settings, preview, and export
 
-There are no command-line options or external presets. Video defaults live in `FractalGui`; the fixed video zoom center lives in `generate_frames()`. The startup preview uses a different center, so its composition is not necessarily identical to the first video frame.
+1. Choose a **Zoom target**: `Original` (default), `Seahorse Valley`, or `Double Spiral Valley`. The exact `x` and `y` coordinates appear next to the menu, and the startup view updates to the selected target. Choose a colormap, such as `plasma`, using the separate colormap menu.
+2. Set **Resolution**, **Duration (s)** and **FPS**. Duration accepts **0.5 to 60 seconds**, with a decimal point or comma. The frame rate can be **24, 30, or 60 fps**. The status line shows the frame count and actual duration after rounding to a whole number of frames. Defaults are **1920 × 1080, 3 seconds, 30 fps** (90 frames).
+3. Click **Preview** to inspect three **320 × 180** frames labeled **Start**, **Middle**, and **End**. They use the same zoom path and framing as export, but not its pixel detail. The images are kept in RAM; this button does not invoke FFmpeg or write a video.
+4. Click **Start Render** to export. Wait for the save message and open `video-output\fractal_zoom.mp4`. The program always writes into the current working directory. It streams native-size RGB frames to FFmpeg rather than storing the entire clip in memory.
 
-| Setting | Default |
+The startup image and on-screen previews stay centered and fit the canvas without stretching or cropping, with upscaling limited to 2×. Resizing the window does not recompute the fractal or change the export. The single startup image uses the selected center but a different framing path from the three-image preview. Use **Preview** to judge the export composition.
+
+The checked-in [`fractal_zoom.mp4`](fractal_zoom.mp4) is a sample, not an input. Move an output you want to keep before starting another export in the same directory. On a successful render, the application can replace the previous output. The PowerShell launch check only applies when launching from the example above, not to repeated renders in the app or launches from PyCharm.
+
+### Output resolutions
+
+| Preset | Resolution |
 | --- | ---: |
-| Requested output resolution | 1920 × 1080 |
-| Frame count | 90 |
-| Frame rate | 30 fps |
-| Expected duration | 3 seconds |
-| Maximum Mandelbrot iterations | 256 |
-| Zoom speed parameter | 0.12 |
-| Initial colormap | `viridis` |
+| Quick test | 160 × 90 |
+| Tiny | 256 × 144 |
+| Small | 320 × 180 |
+| Draft | 480 × 270 |
+| 360p | 640 × 360 |
+| 450p | 800 × 450 |
+| 540p | 960 × 540 |
+| 630p | 1120 × 630 |
+| HD | 1280 × 720 |
+| Full HD (default) | 1920 × 1080 |
+| QHD | 2560 × 1440 |
+| 4K UHD | 3840 × 2160 |
+
+Use **Quick test** to check the export pipeline. Its low pixel count is not intended for judging fine detail. All presets are 16:9. Changing duration or FPS changes how many frames describe the zoom, not its endpoint. Maximum iterations remain fixed at 256 and the initial colormap is `viridis`. There are no command-line switches or external preset files for these settings.
+
+### Read the time estimate
+
+After **Preview**, the app shows an approximate compute-time range per frame and for the full clip. The range comes from timing the three 320 × 180 frames and scaling by pixel count for other resolutions. It **excludes MP4 encoding** and is not an end-to-end render-time prediction. Extrapolation is less reliable at high resolutions.
+
+Changing resolution, duration, or FPS updates the estimate from the same samples. Changing the zoom target or colormap requires a new Preview run for that combination.
 
 ## Verification and known limitations
 
-The baseline tests used the generator from [`1d33d08`](https://raw.githubusercontent.com/fulopxx/python_pub/1d33d0833a2c53045bec3705898b36f362dd6183/Fractal_video_generator/fractal_video_generator.py). The preview-fit regression test used `230cc29` from [PR #5](https://github.com/fulopxx/python_pub/pull/5). Both reduced tests used temporary copies with smaller render parameters.
-
-| Verified on Windows | Result |
+| Windows verification | Result |
 | --- | --- |
-| Default-size render, original Numba binding | 1920 × 1080, 90 decoded frames, 30 fps, 3.00 seconds. The exported MP4 played back correctly. |
-| Reduced render, NVIDIA CUDA binding | 320 × 240, 6 decoded frames, 6 fps, 1.00 second. The exported MP4 showed the full frame in `plasma`, and the application exited normally. |
-| Normal PyCharm launch, NVIDIA CUDA binding | Preview, colormap change and normal exit worked without the temporary test launcher. A full-size export was not repeated with this binding. |
-| Preview-fit regression test, NVIDIA CUDA binding | The entire preview remained visible after switching to `plasma`, and closing the window returned exit code `0`. The MP4 played with full framing and visible zoom; FFmpeg decoded all 6 frames at 320 × 240 and 6 fps, for 1.00 second. |
+| Historical full-size test, earlier render path and original Numba binding | 1920 × 1080, 90 decoded frames, 30 fps, 3.00 seconds. The MP4 played correctly. That result does not verify the current native-resolution writer at Full HD. |
+| Zoom-target selector and NVIDIA CUDA binding ([PR #7](https://github.com/fulopxx/python_pub/pull/7)) | Target changes updated the coordinates and preview. Colormap switching, clean exit, and a short MP4 export passed. |
+| Native MP4 streaming and NVIDIA CUDA binding ([PR #8](https://github.com/fulopxx/python_pub/pull/8)) | FFmpeg decoded **160 × 90, 24 fps, 288 frames, 12.00 s** and **800 × 450, 24 fps, 480 frames, 20.00 s**. Both files retained the selected dimensions. |
+| Resize, RAM-only preview and estimate ([PR #9](https://github.com/fulopxx/python_pub/pull/9)) | The startup image followed window resizing, Preview showed three images, and the estimate updated with settings. A preview-only run exited with code `0` and left the output directory empty. |
 
 The test exports were decoded end to end by FFmpeg as H.264 / `yuv420p`. To verify a new export without rendering again, run these commands in the PowerShell session used for setup:
 
@@ -97,5 +113,6 @@ $ffmpeg = & $py -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe()
 
 Check the reported resolution, frame rate and final decoded frame count, and look for exit code `0`. Open the file separately to assess color, framing and motion.
 
-- **Matplotlib:** the tested 3.8.4 release warns that `tostring_rgb()` is deprecated. Matplotlib 3.10 removed it, so do not upgrade past the pin without updating and retesting the image capture code ([Matplotlib API changes](https://matplotlib.org/3.10.0/api/prev_api_changes/api_changes_3.10.0.html)).
-- **Render time and memory:** rendering runs synchronously and keeps frames in memory until encoding. Start one render at a time; larger jobs have not been benchmarked.
+- **High resolutions and timing:** 4K is selectable but has not been tested. Full HD has not been retested with the current native writer and NVIDIA CUDA binding. The estimate's accuracy has not been measured against full renders.
+- **Deep zoom:** the current `float32` coordinate grid can repeat coordinates at deep zoom, even when the output has the requested dimensions. The app warns when it detects repeated coordinates in the final grid.
+- **Matplotlib:** the startup image still uses `tostring_rgb()`, which is deprecated in the tested 3.8.4 version and was removed in 3.10. Keep the pinned version until the startup path is updated and retested ([Matplotlib API changes](https://matplotlib.org/3.10.0/api/prev_api_changes/api_changes_3.10.0.html)).
